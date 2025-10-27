@@ -37,6 +37,9 @@ CryptonForge envisions a transparent system for creators to establish on-chain p
 
 ---
 
+Contract detail : 0xc4B68aBe3201c95CD8db95d69a533Ebb8f0e69f7
+![alt text](image.png)
+
 ### 🪄 Commands
 
 ```bash
@@ -51,6 +54,3 @@ npx hardhat test
 
 # Deploy to Sepolia testnet
 npx hardhat run scripts/deploy.js --network sepolia
-
-Contract detail : 0xc4B68aBe3201c95CD8db95d69a533Ebb8f0e69f7
-![alt text](image.png)
