@@ -1,17 +1,4 @@
-// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
-
-import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
-
-/**
- * @title CryptonForge
- * @dev NFT minting and forging platform with upgradeable tokens
- */
-contract CryptonForge is ERC721URIStorage, Ownable {
-    uint256 private _tokenIds;
-
-    // Mapping tokenId to forging level (>=1)
+Mapping tokenId to forging level (>=1)
     mapping(uint256 => uint256) public tokenLevels;
 
     event NFTMinted(address indexed to, uint256 indexed tokenId, string tokenURI);
@@ -45,25 +32,13 @@ contract CryptonForge is ERC721URIStorage, Ownable {
 
         uint256 totalLevel = 0;
 
-        // Validate ownership and sum levels
-        for (uint256 i = 0; i < tokenIds.length; i++) {
-            require(ownerOf(tokenIds[i]) == msg.sender, "Must own all tokens");
-            totalLevel += tokenLevels[tokenIds[i]];
-        }
-
-        // Burn old tokens
+        Burn old tokens
         for (uint256 i = 0; i < tokenIds.length; i++) {
             _burn(tokenIds[i]);
             delete tokenLevels[tokenIds[i]];
         }
 
-        // Mint new token with increased level
-        _tokenIds++;
-        uint256 newTokenId = _tokenIds;
-        _safeMint(msg.sender, newTokenId);
-        _setTokenURI(newTokenId, newTokenURI);
-
-        // Define new level as sum of levels (can be customized)
+        Define new level as sum of levels (can be customized)
         tokenLevels[newTokenId] = totalLevel;
 
         emit NFTForged(msg.sender, tokenIds, newTokenId, totalLevel);
@@ -80,3 +55,6 @@ contract CryptonForge is ERC721URIStorage, Ownable {
         return tokenLevels[tokenId];
     }
 }
+// 
+End
+// 
