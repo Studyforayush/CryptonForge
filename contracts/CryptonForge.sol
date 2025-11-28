@@ -1,60 +1,177 @@
-Mapping tokenId to forging level (>=1)
-    mapping(uint256 => uint256) public tokenLevels;
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.19;
 
-    event NFTMinted(address indexed to, uint256 indexed tokenId, string tokenURI);
-    event NFTForged(address indexed owner, uint256[] burnedTokenIds, uint256 newTokenId, uint256 newLevel);
+/**
+ * @title CryptonForge
+ * @dev Simple on-chain asset forge for registering and updating hashed artifacts
+ * @notice Users can forge new assets identified by hashes and maintain versioned metadata URIs
+ */
+contract CryptonForge {
+    address public owner;
 
-    constructor() ERC721("CryptonForge", "CFT") {}
+    struct ForgeAsset {
+        address creator;
+        bytes32 assetHash;     // hash of the off-chain artifact / content
+        string  name;          // human-readable name
+        string  uri;           // metadata or content URI
+        uint256 version;       // version counter
+        uint256 createdAt;
+        uint256 updatedAt;
+        bool    isActive;
+    }
 
-    /**
-     * @dev Owner can mint NFTs with initial level 1
-     * @param to Receiver of NFT
-     * @param tokenURI Metadata URI
-     */
-    function mintNFT(address to, string memory tokenURI) external onlyOwner returns (uint256) {
-        _tokenIds++;
-        uint256 newTokenId = _tokenIds;
-        _safeMint(to, newTokenId);
-        _setTokenURI(newTokenId, tokenURI);
-        tokenLevels[newTokenId] = 1;
+    // assetId => ForgeAsset
+    mapping(uint256 => ForgeAsset) public assets;
 
-        emit NFTMinted(to, newTokenId, tokenURI);
-        return newTokenId;
+    // creator => assetIds[]
+    mapping(address => uint256[]) public assetsOf;
+
+    // assetHash => latest assetId (first forge defines identity)
+    mapping(bytes32 => uint256) public latestByHash;
+
+    uint256 public nextAssetId;
+
+    event AssetForged(
+        uint256 indexed assetId,
+        address indexed creator,
+        bytes32 indexed assetHash,
+        string name,
+        string uri,
+        uint256 version,
+        uint256 timestamp
+    );
+
+    event AssetUpdated(
+        uint256 indexed assetId,
+        string name,
+        string uri,
+        uint256 version,
+        uint256 timestamp
+    );
+
+    event AssetStatusUpdated(
+        uint256 indexed assetId,
+        bool isActive,
+        uint256 timestamp
+    );
+
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Only owner");
+        _;
+    }
+
+    modifier assetExists(uint256 assetId) {
+        require(assets[assetId].creator != address(0), "Asset not found");
+        _;
+    }
+
+    modifier onlyCreator(uint256 assetId) {
+        require(assets[assetId].creator == msg.sender, "Not creator");
+        _;
+    }
+
+    constructor() {
+        owner = msg.sender;
     }
 
     /**
-     * @dev User can forge by burning multiple owned NFTs to mint a higher level NFT
-     * @param tokenIds Token IDs user owns to burn
-     * @param newTokenURI Metadata URI for new forged NFT
+     * @dev Forge a new asset from a content hash
+     * @param assetHash Hash of the artifact
+     * @param name Human-readable name
+     * @param uri Metadata/content URI
      */
-    function forgeNFT(uint256[] calldata tokenIds, string calldata newTokenURI) external returns (uint256) {
-        require(tokenIds.length >= 2, "At least two NFTs required to forge");
+    function forgeAsset(
+        bytes32 assetHash,
+        string calldata name,
+        string calldata uri
+    ) external returns (uint256 assetId) {
+        require(assetHash != bytes32(0), "Invalid hash");
 
-        uint256 totalLevel = 0;
+        assetId = nextAssetId++;
+        ForgeAsset storage a = assets[assetId];
 
-        Burn old tokens
-        for (uint256 i = 0; i < tokenIds.length; i++) {
-            _burn(tokenIds[i]);
-            delete tokenLevels[tokenIds[i]];
-        }
+        a.creator = msg.sender;
+        a.assetHash = assetHash;
+        a.name = name;
+        a.uri = uri;
+        a.version = 1;
+        a.createdAt = block.timestamp;
+        a.updatedAt = block.timestamp;
+        a.isActive = true;
 
-        Define new level as sum of levels (can be customized)
-        tokenLevels[newTokenId] = totalLevel;
+        assetsOf[msg.sender].push(assetId);
+        latestByHash[assetHash] = assetId;
 
-        emit NFTForged(msg.sender, tokenIds, newTokenId, totalLevel);
-
-        return newTokenId;
+        emit AssetForged(
+            assetId,
+            msg.sender,
+            assetHash,
+            name,
+            uri,
+            1,
+            block.timestamp
+        );
     }
 
     /**
-     * @dev Returns the forging level of a token
-     * @param tokenId Token ID
+     * @dev Update name/uri of an existing asset (increments version)
+     * @param assetId Asset identifier
+     * @param name New name
+     * @param uri New URI
      */
-    function getTokenLevel(uint256 tokenId) external view returns (uint256) {
-        require(_exists(tokenId), "Nonexistent token");
-        return tokenLevels[tokenId];
+    function updateAsset(
+        uint256 assetId,
+        string calldata name,
+        string calldata uri
+    )
+        external
+        assetExists(assetId)
+        onlyCreator(assetId)
+    {
+        ForgeAsset storage a = assets[assetId];
+        require(a.isActive, "Inactive asset");
+
+        a.name = name;
+        a.uri = uri;
+        a.version += 1;
+        a.updatedAt = block.timestamp;
+
+        // keep latestByHash pointing at most recently updated asset for this hash
+        latestByHash[a.assetHash] = assetId;
+
+        emit AssetUpdated(assetId, name, uri, a.version, block.timestamp);
+    }
+
+    /**
+     * @dev Activate/deactivate an asset
+     * @param assetId Asset identifier
+     * @param active New active state
+     */
+    function setAssetActive(uint256 assetId, bool active)
+        external
+        assetExists(assetId)
+        onlyCreator(assetId)
+    {
+        assets[assetId].isActive = active;
+        emit AssetStatusUpdated(assetId, active, block.timestamp);
+    }
+
+    /**
+     * @dev Get all assetIds created by a given address
+     */
+    function getAssetsOf(address user) external view returns (uint256[] memory) {
+        return assetsOf[user];
+    }
+
+    /**
+     * @dev Transfer protocol ownership
+     */
+    function transferOwnership(address newOwner) external onlyOwner {
+        require(newOwner != address(0), "Zero address");
+        address prev = owner;
+        owner = newOwner;
+        emit OwnershipTransferred(prev, newOwner);
     }
 }
-// 
-End
-// 
